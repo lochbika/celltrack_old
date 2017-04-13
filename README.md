@@ -1,4 +1,7 @@
 # celltrack
+
+This repository has been moved to a different location. To obtain the latest source code, please contact the owner!
+
 celltrack is software that finds continuous cells in 2D fields and tracks them
 in time. The primary use case is rain cell tracking.
 
