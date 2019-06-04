@@ -1,6 +1,6 @@
 # celltrack
 
-**This repository has moved to a different location. To obtain the latest source code, please contact the owner!**
+**This repository has moved to a different location. There will be sporadic updates here, but to obtain the latest source code, go to https://git.kailua.nl/kai/celltrack.**
 
 celltrack is software that finds continuous cells in 2D fields and tracks them
 in time. The primary use case is rain cell tracking.
