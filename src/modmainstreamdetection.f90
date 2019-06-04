@@ -27,13 +27,13 @@ module mainstreamdetection
 
       integer :: ant,run,maxconlen,numeqsol
       integer, allocatable :: init(:),quit(:),qi(:),ninit,nquit
-      integer, allocatable :: paths(:,:),qicon(:,:)
+      integer, allocatable :: paths(:,:),pathsi(:,:),qicon(:,:)
       integer, allocatable :: thismainstream(:),lastmainstream(:)
-      real(kind=8),allocatable :: eta(:),pher(:)
+      real(kind=stdfloattype),allocatable :: eta(:),pher(:)
       logical,allocatable :: backw(:)
       logical :: resetnants
-      character(len=800) :: ttrack
-      real(kind=8) :: wsum,isum,areasum,intsum
+      character(len=stdclen) :: ttrack
+      real(kind=stdfloattype) :: wsum,isum,areasum,intsum
 
       write(*,*)"======================================="
       write(*,*)"======== MAINSTREAM DETECTION ========="
@@ -46,6 +46,8 @@ module mainstreamdetection
       ! allocate mainstream
       allocate(allmainstream(nmeta,maxmetalen))
       allmainstream=-1
+      allocate(mstrnobounds(nmeta))
+      mstrnobounds=.true.
 
       ! read connections file
       CALL scan_trackfile("meta_con.txt",nmeta,maxconlen)
@@ -126,14 +128,10 @@ module mainstreamdetection
           end if
         end do
         nquit=tp
-        ! if not set, set the number of ants equal to the number of connections
+        ! if not set, set the number of ants equal to the (ninit + nquit)*2
         if(nants.eq.-1)then
           resetnants=.true.
-          do k=1,maxconlen
-            if(allcon(i,k,1)==-1)exit
-            nants=k
-          end do
-          if(nants<5)nants=5
+          nants=(ninit+nquit)*2
           if(nants>maxnants .AND. maxnants.ne.-1)nants=maxnants
           if(verbose)write(*,*)"--- number of ants: ",nants
         else
@@ -155,7 +153,7 @@ module mainstreamdetection
           eta(k)=(intsum + areasum )/2
           ! backup; if the distance between cells is 0
           if(eta(k)==0.D0)then
-            if(verbose)write(*,*)"Warning: difference between cells is 0!!"
+            if(verbose)write(*,*)"--- Warning: difference between cells is 0!!"
             eta(k)=0.000001
           end if
         end do
@@ -163,27 +161,25 @@ module mainstreamdetection
         allocate(pher(maxconlen))
         pher=-1
         allocate(paths(nants,maxconlen*2))
+        allocate(pathsi(nants,maxconlen*2))
         ! do this for each ant to determine more trustworthy initial pheromone values
         isum=0 ! total average cost value
         do n=1,nants
+          if(verbose)write(*,*)"--- creating random nearest neighbour path for ant ",n
           paths=-1
-          ! use a random init and do a nn track; temporarely use paths to store it
+          pathsi=-1
+          ! use a random init and do a nn track; temporarely use paths and pathsi to store it
           CALL RANDOM_NUMBER(rnum)
           tp=1 + FLOOR( rnum * ninit )
           ! construct a nn path
-          CALL nnPath(init(tp),allcon(i,:,:),maxconlen,eta,paths(1,:))
+          CALL nnPath(init(tp),allcon(i,:,:),maxconlen,eta,paths(1,:),pathsi(1,:))
           ! calculate the average cost (sum of eta) of this random path
           wsum=0
           tp=0
           do k=1,(maxconlen*2) !path
-            if(paths(1,k)==-1)exit
-            do j=1,maxconlen !connections
-              if(allcon(i,j,1)==-1)exit
-              if(allcon(i,j,1)==paths(1,k) .AND. allcon(i,j,2)==paths(1,k+1))then
-                wsum=wsum+eta(j)
-                tp=tp+1
-              end if
-            end do
+            if(pathsi(1,k)==-1)exit
+              wsum=wsum+eta(pathsi(1,k))
+              tp=tp+1
           end do
           ! average
           wsum=wsum/tp
@@ -194,6 +190,7 @@ module mainstreamdetection
         wsum=isum/nants
         ! reset paths
         paths=-1
+        pathsi=-1
         ! update the pheromone trails with
         do k=1,maxconlen !pher
           if(allcon(i,k,1)==-1)exit
@@ -202,12 +199,17 @@ module mainstreamdetection
 
         ! now release the ants ;)
         do run=1,nruns
-
+          
+          ! give some information about this run
+          if(verbose)write(*,*)"--- This is run: ",run
+          
           ! allocate the backwards marker
           allocate(backw(nants))
           backw=.false.
 
           do ant=1,nants
+
+            if(verbose)write(*,*)"----- Ant ",ant," is running..."
 
             ! get a random init position
             CALL RANDOM_NUMBER(rnum)
@@ -215,6 +217,7 @@ module mainstreamdetection
             ! check if tp is either in the init or quit range and set qi to init resp. quit
             allocate(qicon(maxconlen,2))
             if(tp>ninit)then
+              if(verbose)write(*,*)"----- ... backwards"
               allocate(qi(nquit))
               qi=quit(1:nquit)
               tp=tp-ninit
@@ -226,6 +229,7 @@ module mainstreamdetection
                 qicon(k,2)=allcon(i,k,1)
               end do
             else
+              if(verbose)write(*,*)"----- ... forward"
               allocate(qi(ninit))
               qi=init(1:ninit)
               qicon=allcon(i,:,:)
@@ -233,67 +237,46 @@ module mainstreamdetection
             end if
 
             ! construct a path
-            CALL acoPath(qi(tp),qicon,maxconlen,eta,pher,paths(ant,:))
+            CALL acoPath(qi(tp),qicon,maxconlen,eta,pher,paths(ant,:),pathsi(ant,:))
 
             ! deallocate qicon,qi
             deallocate(qicon,qi)
           end do
 
           ! pheromone evaporation
+          if(verbose)write(*,*)"----- performing pheromone evaporation"
           do k=1,maxconlen
             if(pher(k)==-1)exit
             pher(k) = (1-pherevap)*pher(k)
           end do
 
           ! pheromone update
+          if(verbose)write(*,*)"----- performing pheromone update"
           do ant=1,nants
 
             ! calculate the cost (sum of eta) of each ants path
             wsum=0
             tp=0
             do k=1,(maxconlen*2) !path
-              if(paths(ant,k)==-1)exit
-              do j=1,maxconlen !connections
-                if(allcon(i,j,1)==-1)exit
-                if(backw(ant))then
-                  if(allcon(i,j,2)==paths(ant,k) .AND. allcon(i,j,1)==paths(ant,k+1))then
-                    wsum=wsum+eta(j)
-                    tp=tp+1
-                  end if
-                else
-                  if(allcon(i,j,1)==paths(ant,k) .AND. allcon(i,j,2)==paths(ant,k+1))then
-                    wsum=wsum+eta(j)
-                    tp=tp+1
-                  end if
-                end if
-              end do
+              if(pathsi(ant,k)==-1)exit
+                wsum=wsum+eta(pathsi(ant,k))
+                tp=tp+1
             end do
 
             ! average by number of nodes
             wsum=wsum/tp
 
             ! update the pheromone path
-            do k=1,maxconlen ! connections
-              if(allcon(i,k,1)==-1)exit
-              ! search a path for this connection
-              do j=1,(maxconlen*2)
-                if(paths(ant,j)==-1)exit
-                if(backw(ant))then
-                  if(allcon(i,k,2)==paths(ant,j) .AND. allcon(i,k,1)==paths(ant,j+1))then
-                    pher(k)=pher(k)+1/wsum
-                  end if
-                else
-                  if(allcon(i,k,1)==paths(ant,j) .AND. allcon(i,k,2)==paths(ant,j+1))then
-                    pher(k)=pher(k)+1/wsum
-                  end if
-                end if
-              end do
+            do k=1,(maxconlen*2) !path
+              if(pathsi(ant,k)==-1)exit
+              pher(pathsi(ant,k))=pher(pathsi(ant,k))+1/wsum
             end do
           end do
           deallocate(backw)
 
           ! Do the following each run
           if(MOD(run,1)==0 .OR. run==nruns)then
+            if(verbose)write(*,*)"----- checking for stagnation criteria"
             ! check if the current mainstream is different from the last ones
             ! generate the solution: chose the init with the highest pheromone trail and do nn path with the inverse pheromone values
             wsum=0
@@ -309,7 +292,7 @@ module mainstreamdetection
             end do
             ! nn path
             thismainstream=-1
-            CALL nnPath(allcon(i,tp,1),allcon(i,:,:),maxconlen,1/pher,thismainstream(:))
+            CALL nnPath(allcon(i,tp,1),allcon(i,:,:),maxconlen,1/pher,thismainstream(:),pathsi(1,:))
             if(ALL(thismainstream==lastmainstream))then
               numeqsol=numeqsol+1
             else
@@ -320,36 +303,43 @@ module mainstreamdetection
 
           ! check the termination conditions
           if(numeqsol>10)then
-            if(verbose)write(*,*)"Stagnation in solution construction: Mainstream didn't change since 10 iterations. Stop!"
+            if(verbose)write(*,*)"----- Stagnation in solution construction: Mainstream didn't change since 10 iterations. Stop!"
             exit
           end if
           if(run==nruns)then
             ! only notify if in verbose mode; the loop will stop after this anyway
-            if(verbose)write(*,*)"Maximum number of runs reached. Stop!"
+            if(verbose)write(*,*)"----- Maximum number of runs reached. Stop!"
           end if
         end do
 
         ! use the latest thismainstream to set the global mainstream for this meta track
         allmainstream(i,:)=thismainstream
 
+        ! check the mainstream for cells that touch the boundaries
+        do k=1,maxmetalen
+          if(allmainstream(i,k)==-1)exit
+          if(.NOT.nobounds(allmainstream(i,k)))mstrnobounds(i)=.false.
+        end do
+        
         ! write the connections with their pheromone values and distances
         ! write header meta_con_pher.txt
-        write(1,'(1a4,1i12,1L4,1i4)')"### ",i,mnobounds(i)
+        write(1,'(1a4,1i12,1L4,1i4)')"### ",i,mstrnobounds(i)
         write(1,*)"   trackID1    trackID2        pher        dist"
         do k=1,maxmetalen
           if(allcon(i,k,1)==-1)exit
           write(1,'(2i12,2f12.5)')allcon(i,k,:),pher(k),eta(k)
         end do
 
-        deallocate(init,quit,eta,pher,paths,thismainstream,lastmainstream)
+        deallocate(init,quit,eta,pher,paths,pathsi,thismainstream,lastmainstream)
         if(resetnants)nants=-1
       end do
       close(unit=1)
 
+      ! write to meta_mainstream.txt
       open(unit=1,file="meta_mainstream.txt",action="write",status="replace")
       do i=1,nmeta
         ! write header meta_stats.txt
-        write(1,'(1a4,1i12,1L4,1i4)')"### ",i,mnobounds(i)
+        write(1,'(1a4,1i12,1L4,1i4)')"### ",i,mstrnobounds(i)
         write(1,*)"    trackID      trType            peakVal    pValtime              avVal start   dur"
         do k=1,maxmetalen
           if(allmainstream(i,k)==-1)exit
@@ -378,25 +368,30 @@ module mainstreamdetection
 
     end subroutine domainstreamdetection
 
-    subroutine acoPath(init,cons,ncons,lens,pher,path)
+    subroutine acoPath(init,cons,ncons,lens,pher,path,pathi)
 
       use globvar, only: alpha,beta
 
       implicit none
 
-      integer,intent(out) :: path(ncons*2)
+      integer,intent(out) :: path(ncons*2),pathi(ncons*2)
       integer,intent(in)  :: cons(ncons,2),ncons,init
-      integer :: a,next(500),pcount,i,tp
-      real(kind=8),intent(in) :: pher(ncons),lens(ncons)
-      real(kind=8) :: tauij,etaij,tauil,etail,zeta,rnum,probsum
-      real(kind=8),allocatable :: cprob(:)
+      integer :: a,ai,next(500),pcount,i,tp
+      real(kind=stdfloattype),intent(in) :: pher(ncons),lens(ncons)
+      real(kind=stdfloattype) :: tauij,etaij,tauil,etail,zeta,rnum,probsum
+      real(kind=stdfloattype),allocatable :: cprob(:)
 
       pcount=0
       a=init
+      ai=-1
+
       do
         ! add a to path
         pcount=pcount+1
         path(pcount)=a
+        ! if we do the next step already in the firs iteration
+        ! the first connection occurs twice in pathi
+        if(pcount>1)pathi(pcount-1)=ai 
         ! search for possible connections at this cell
         tp=0 ! number of possible connections
         next=-1
@@ -412,6 +407,7 @@ module mainstreamdetection
         !!! the random proportional rule; but do it only if there are at least 2 possible choices
         if(tp==1)then
           a=cons(next(tp),2)
+          ai=next(tp)
         else
           ! calculate zeta
           zeta=0
@@ -434,6 +430,7 @@ module mainstreamdetection
             probsum=probsum+cprob(i)
             if(rnum<=probsum)then
               a=cons(next(i),2)
+              ai=next(i)
               exit
             end if
           end do
@@ -442,27 +439,32 @@ module mainstreamdetection
       end do
     end subroutine acoPath
 
-    subroutine nnPath(init,cons,ncons,lens,path)
+    subroutine nnPath(init,cons,ncons,lens,path,pathi)
       !! if lens contains differences this algorithm will find a nearest neighbour path
       !! if lens contains absolute values this is a local minimum cost algorithm
 
       implicit none
 
-      integer,intent(out) :: path(ncons*2)
+      integer,intent(out) :: path(ncons*2),pathi(ncons*2)
       integer,intent(in)  :: cons(ncons,2),ncons,init
 
-      real(kind=8),intent(in) :: lens(ncons)
+      real(kind=stdfloattype),intent(in) :: lens(ncons)
 
-      real(kind=8) :: clen
+      real(kind=stdfloattype) :: clen
 
-      integer :: i,tp,a,next(500),pcount
+      integer :: i,ai,tp,a,next(500),pcount
 
       pcount=0
       a=init
+      ai=-1
+      
       do
         ! add a to path
         pcount=pcount+1
         path(pcount)=a
+        ! if we do the next step already in the firs iteration
+        ! the first connection occurs twice in pathi
+        if(pcount>1)pathi(pcount-1)=ai 
         ! search for possible connections at this cell
         tp=0
         next=-1
@@ -482,6 +484,7 @@ module mainstreamdetection
           if(lens(next(i))<clen)then
             clen=lens(next(i))
             a=cons(next(i),2)
+            ai=next(i)
           end if
         end do
       end do

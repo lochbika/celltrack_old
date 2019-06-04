@@ -25,8 +25,8 @@ module trackstatistics
 
       implicit none
 
-      character(len=800) :: ttrack
-      real(kind=8) :: pint,avint
+      character(len=stdclen) :: ttrack
+      real(kind=stdfloattype) :: pint,avint
       integer :: pinttime
 
       write(*,*)"======================================="
@@ -99,24 +99,32 @@ module trackstatistics
 
         ! write stats
         write(4,'(1a4,1i12,1L4,1i4)')"### ",i,nobounds(i),trtypes(i)
-        write(4,*)"     clID    tsclID    clarea       clcmassX"//&
-          &"       clcmassY      wclcmassX      wclcmassY            peakVal              avVal  touchb"
+        write(4,*)"     clID    tsclID             clarea grd_clarea         clcmassX"//&
+        &"         clcmassY        wclcmassX        wclcmassY     grd_clcmassX"//&
+        &"     grd_clcmassY     grd_clcmassX     grd_clcmassY"//&
+        &"            peakVal"//&
+        &"              avVal  touchb      date(YYYYMMDD)        time(hhmmss)"
         do k=1,maxtrlen
           if(alltracks(i,k)==-1)exit
-          write(4,'(3i10,4f15.6,2f19.12,1L8)')clIDs(alltracks(i,k)),tsclID(alltracks(i,k)), &
-            & clarea(alltracks(i,k)),clcmass(alltracks(i,k),:), &
-            & wclcmass(alltracks(i,k),:),clpint(alltracks(i,k)),clavint(alltracks(i,k)),touchb(alltracks(i,k))
+          write(4,'(2i10,1f19.2,1i11,8f17.3,2f19.10,1L8,2i20.6)')clIDs(alltracks(i,k)),tsclID(alltracks(i,k)), &
+            & clarea(alltracks(i,k)),clareagrd(alltracks(i,k)),clcmass(alltracks(i,k),:), &
+            & wclcmass(alltracks(i,k),:),clcmassgrd(alltracks(i,k),:),wclcmassgrd(alltracks(i,k),:),&
+            & clpint(alltracks(i,k)),clavint(alltracks(i,k)),touchb(alltracks(i,k))
         end do
         ! write stats for clean tracks
         if(nobounds(i) .AND. trtypes(i)==9)then
           write(5,'(1a4,1i12,1L4,1i4)')"### ",i,nobounds(i),trtypes(i)
-          write(5,*)"     clID    tsclID    clarea       clcmassX"//&
-            &"       clcmassY      wclcmassX      wclcmassY            peakVal              avVal  touchb"
+          write(5,*)"     clID    tsclID             clarea grd_clarea         clcmassX"//&
+        &"         clcmassY        wclcmassX        wclcmassY     grd_clcmassX"//&
+        &"     grd_clcmassY     grd_clcmassX     grd_clcmassY"//&
+        &"            peakVal"//&
+        &"              avVal  touchb      date(YYYYMMDD)        time(hhmmss)"
           do k=1,maxtrlen
             if(alltracks(i,k)==-1)exit
-            write(5,'(3i10,4f15.6,2f19.12,1L8)')clIDs(alltracks(i,k)),tsclID(alltracks(i,k)), &
-            & clarea(alltracks(i,k)),clcmass(alltracks(i,k),:), &
-            & wclcmass(alltracks(i,k),:),clpint(alltracks(i,k)),clavint(alltracks(i,k)),touchb(alltracks(i,k))
+            write(5,'(2i10,1f19.2,1i11,8f17.3,2f19.10,1L8,2i20.6)')clIDs(alltracks(i,k)),tsclID(alltracks(i,k)), &
+            & clarea(alltracks(i,k)),clareagrd(alltracks(i,k)),clcmass(alltracks(i,k),:), &
+            & wclcmass(alltracks(i,k),:),clcmassgrd(alltracks(i,k),:),wclcmassgrd(alltracks(i,k),:),&
+            & clpint(alltracks(i,k)),clavint(alltracks(i,k)),touchb(alltracks(i,k))
           end do
         end if
 
@@ -172,7 +180,7 @@ module trackstatistics
       include 'cdi.inc'
 
       ! data arrays
-      real(kind=8), allocatable :: dat(:)      ! array for reading float from nc
+      real(kind=stdfloattype), allocatable :: dat(:)      ! array for reading float from nc
 
       integer, allocatable :: tnums(:)
       
@@ -181,9 +189,6 @@ module trackstatistics
       write(*,*)"======================================="
       write(*,*)"=== ... to tracks.nc ..."
       write(*,*)"---------"
-
-      ! Get initial Information about grid and timesteps of both files
-      CALL datainfo(outfile)
 
       ! Open the cells file
       streamID2=streamOpenRead(outfile)
@@ -198,17 +203,10 @@ module trackstatistics
       gridID2=vlistInqVarGrid(vlistID2,varID2)
       taxisID2=vlistInqTaxis(vlistID2)
       zaxisID2=vlistInqVarZaxis(vlistID2,varID2)
-      outmissval=vlistInqVarMissval(vlistID2,varID2)
 
       !! open new nc file for results
       ! define grid
-      gridID1=gridCreate(GRID_GENERIC, nx*ny)
-      CALL gridDefXsize(gridID1,nx)
-      CALL gridDefYsize(gridID1,ny)
-      CALL gridDefXvals(gridID1,xvals)
-      CALL gridDefYvals(gridID1,yvals)
-      CALL gridDefXunits(gridID1,TRIM(xunit))
-      CALL gridDefYunits(gridID1,TRIM(yunit))
+      gridID1=gridDuplicate(gridID2)
       zaxisID1=zaxisCreate(ZAXIS_GENERIC, 1)
       CALL zaxisDefLevels(zaxisID1, level)
       ! define variables
@@ -218,16 +216,19 @@ module trackstatistics
       CALL vlistDefVarLongname(vlistID1,varID1,"unique ID of each track")
       CALL vlistDefVarUnits(vlistID1,varID1,"-")
       CALL vlistDefVarMissval(vlistID1,varID1,outmissval)
-      CALL vlistDefVarDatatype(vlistID1,varID1,DATATYPE_INT32)
+      CALL vlistDefVarDatatype(vlistID1,varID1,CDI_DATATYPE_INT32)
       ! copy time axis from input
       taxisID1=vlistInqTaxis(vlistID2)
       call vlistDefTaxis(vlistID1,taxisID1)
       ! Open the dataset for writing
-      streamID1=streamOpenWrite("tracks.nc",FILETYPE_NC)
+      streamID1=streamOpenWrite("tracks.nc",CDI_FILETYPE_NC4)
       if(streamID1<0)then
          write(*,*)cdiStringError(streamID1)
          stop
       end if
+      ! set netCDF4 compression
+      CALL streamDefCompType(streamID1,CDI_COMPRESS_ZIP)
+      CALL streamDefCompLevel(streamID1, 6)
       ! Assign variables to dataset
       call streamDefVList(streamID1,vlistID1)
 

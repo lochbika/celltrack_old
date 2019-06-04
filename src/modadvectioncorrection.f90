@@ -33,8 +33,10 @@ module advectioncorrection
 
       ! variables and arrays
       integer :: selCL
-      real(kind=8), allocatable :: smpsize2d(:,:),smpsize(:)   ! sample size for each gridpoint on the velocity field
-      real(kind=8) :: mindist,cdist,vxres,vyres
+      real(kind=stdfloattype), allocatable :: smpsize2d(:,:),smpsize(:)   ! sample size for each gridpoint on the velocity field
+      real(kind=stdfloattype) :: mindist,cdist,vxres,vyres
+      real(kind=stdfloattype) :: distxo,distyo ! the direct distance if cells do not cross boundaries
+      real(kind=stdfloattype) :: distxp,distyp ! the distance between if cells crossed boundaries
 
       write(*,*)"======================================="
       write(*,*)"===== START ADVECTION CORRECTION ======"
@@ -46,17 +48,21 @@ module advectioncorrection
       ! we can use the gathered information to coarse grain the grid and open a new dataset
       vnx=nx/coarsex
       vny=ny/coarsey
-      vxres=( (xvals(nx-1)+diflon/2) - (xvals(0)-diflon/2) ) / vnx
-      vyres=( (yvals(ny-1)+diflat/2) - (yvals(0)-diflat/2) ) / vnx
+      vxres=( (xvals(nx)+diflon/2) - (xvals(1)-diflon/2) ) / vnx
+      vyres=( (yvals(ny)+diflat/2) - (yvals(1)-diflat/2) ) / vnx
       allocate(vxvals(vnx),vyvals(vny))
-      vxvals(1)= (xvals(0)-diflon/2) + (vxres/2)
-      vyvals(1)= (yvals(0)-diflat/2) + (vyres/2)
-      do x=2,vnx
-        vxvals(x)=vxvals(1) + (x-1)*vxres
-      end do
-      do y=2,vny
-        vyvals(y)=vyvals(1) + (y-1)*vyres
-      end do
+      vxvals(1)= (xvals(1)-diflon/2) + (vxres/2)
+      vyvals(1)= (yvals(1)-diflat/2) + (vyres/2)
+      if(vnx>1)then
+        do x=2,vnx
+          vxvals(x)=vxvals(1) + (x-1)*vxres
+        end do
+      end if
+      if(vny>1)then
+        do y=2,vny
+          vyvals(y)=vyvals(1) + (y-1)*vyres
+        end do
+      end if
 
       write(*,*)"======================================="
       write(*,*)"=== GRID FOR ADVECTION CORRECTION:"
@@ -78,7 +84,7 @@ module advectioncorrection
       do clID=1,globnIDs
         mindist=HUGE(mindist)
         do x=1,vnx
-          cdist=abs(vxvals(x)-(wclcmass(clID,1)*diflon+xvals(0)))
+          cdist=abs(vxvals(x)-wclcmass(clID,1))
           if(cdist<mindist)then
             vclxindex(clID)=x
             mindist=cdist
@@ -86,7 +92,7 @@ module advectioncorrection
         end do
         mindist=HUGE(mindist)
         do y=1,vny
-          cdist=abs(vyvals(y)-(wclcmass(clID,2)*diflat+yvals(0)))
+          cdist=abs(vyvals(y)-wclcmass(clID,2))
           if(cdist<mindist)then
             vclyindex(clID)=y
             mindist=cdist
@@ -112,7 +118,7 @@ module advectioncorrection
         end if
 
         ! Set the variable IDs 1
-        varID1=ivar
+        varID1=getVarIDbyName(ifile,ivar)
         vlistID1=streamInqVlist(streamID1)
         gridID1=vlistInqVarGrid(vlistID1,varID1)
         taxisID1=vlistInqTaxis(vlistID1)
@@ -136,26 +142,26 @@ module advectioncorrection
         CALL vlistDefVarLongname(vlistID2,vuID,"derived wind speed in x direction")
         CALL vlistDefVarUnits(vlistID2,vuID,"m/s")
         CALL vlistDefVarMissval(vlistID2,vuID,outmissval)
-        CALL vlistDefVarDatatype(vlistID2,vuID,DATATYPE_FLT64)
+        CALL vlistDefVarDatatype(vlistID2,vuID,CDI_DATATYPE_FLT64)
         vvID=vlistDefVar(vlistID2,gridID2,zaxisID2,TIME_VARIABLE)
         CALL vlistDefVarName(vlistID2,vvID,"v")
         CALL vlistDefVarLongname(vlistID2,vvID,"derived wind speed in y direction")
         CALL vlistDefVarUnits(vlistID2,vvID,"m/s")
         CALL vlistDefVarMissval(vlistID2,vvID,outmissval)
-        CALL vlistDefVarDatatype(vlistID2,vvID,DATATYPE_FLT64)
+        CALL vlistDefVarDatatype(vlistID2,vvID,CDI_DATATYPE_FLT64)
         ssizeID=vlistDefVar(vlistID2,gridID2,zaxisID2,TIME_VARIABLE)
         CALL vlistDefVarName(vlistID2,ssizeID,"sample_size")
         CALL vlistDefVarLongname(vlistID2,ssizeID,"number of cells in grid area")
         CALL vlistDefVarUnits(vlistID2,ssizeID,"-")
         CALL vlistDefVarMissval(vlistID2,ssizeID,outmissval)
-        CALL vlistDefVarDatatype(vlistID2,ssizeID,DATATYPE_INT32)
+        CALL vlistDefVarDatatype(vlistID2,ssizeID,CDI_DATATYPE_INT32)
         ! copy time axis from input
         taxisID2=vlistInqTaxis(vlistID1)
         call vlistDefTaxis(vlistID2,taxisID2)
 
         ! Open the dataset for writing
         write(vfile,'(A7,I0.3,A3)')"vfield_",adviter,".nc"
-        streamID2=streamOpenWrite(TRIM(vfile),FILETYPE_NC)
+        streamID2=streamOpenWrite(TRIM(vfile),CDI_FILETYPE_NC4)
         if(streamID2<0)then
            write(*,*)cdiStringError(streamID2)
            stop
@@ -165,6 +171,9 @@ module advectioncorrection
         write(*,*)"=== Calc velocity field and write to ",TRIM(vfile),"..."
         write(*,*)"---------"
 
+        ! set netCDF4 compression
+        CALL streamDefCompType(streamID1,CDI_COMPRESS_ZIP)
+        CALL streamDefCompLevel(streamID1, 6)
         ! Assign variables to dataset
         call streamDefVList(streamID2,vlistID2)
 
@@ -175,15 +184,60 @@ module advectioncorrection
           if(touchb(clID))cycle
           if(tsclID(clID).ne.1 .AND. nbw(clID)==1)then
             ! find the cell which is connected backwards
-            do i=1,iclIDloc(clID)
-              if(links(clID,i))then
-                selCL=i+minclIDloc(clID)
+            do i=1,nlinks(clID)
+              if(ltype(clID,i)==1)then
+                selCL=links(clID,i)
                 exit
               end if
             end do
             if(nfw(selCL)==1)then
-              vclx(clID)=(wclcmass(clID,1)-wclcmass(selCL,1))*diflon/tstep
-              vcly(clID)=(wclcmass(clID,2)-wclcmass(selCL,2))*diflat/tstep
+              if(verbose)write(*,*)"Calculating distance and velocity between cell ",clID," and ",selCL
+              if(periodic)then
+                ! ok, now it's getting tricky because we don't know whether selCL
+                ! crossed the boundaries to become clID.
+                ! At this step I calculate two kinds of distances between the two cells
+                ! 1. the direct distance: wclcmass(clID,1)-wclcmass(selCL,1)
+                !    this assumes selCL did not cross the boundaries
+                ! 2. the distance between clID and the projection of selCL
+                !    this assumes that selCL crossed the boundaries
+                distxo=wclcmass(clID,1)-wclcmass(selCL,1) ! 1 in x direction
+                distyo=wclcmass(clID,2)-wclcmass(selCL,2) ! 1 in y direction
+                ! 2 in x direction
+                if(wclcmass(clID,1)>=wclcmass(selCL,1))then
+                  distxp=wclcmass(clID,1)-wclcmass(selCL,1)+nx
+                else
+                  distxp=wclcmass(clID,1)+nx-wclcmass(selCL,1)
+                end if
+                ! 2 in y direction
+                if(wclcmass(clID,2)>=wclcmass(selCL,2))then
+                  distyp=wclcmass(clID,2)-wclcmass(selCL,2)+ny
+                else
+                  distyp=wclcmass(clID,2)+ny-wclcmass(selCL,2)
+                end if
+                if(verbose)write(*,*)"distances are x,y"
+                if(verbose)write(*,*)"  ",distxo,distyo
+                if(verbose)write(*,*)"projected distances are x,y"
+                if(verbose)write(*,*)"  ",distxp,distyp
+                if( abs(distxo) .gt. abs(distxp) )then
+                  ! this means the cell crossed the boundaries
+                  vclx(clID)=distxp*diflon/tstep
+                  if(verbose)write(*,*)"Cell ",clID," crosses the x boundary"
+                else
+                  ! no boundary crossing: just do the normal calculation
+                  vclx(clID)=distxo*diflon/tstep
+                end if
+                if( abs(distyo) .gt. abs(distyp) )then
+                  ! this means the cell crossed the boundaries
+                  vcly(clID)=distyp*diflat/tstep
+                  if(verbose)write(*,*)"Cell ",clID," crosses the y boundary"
+                else
+                  ! no boundary crossing: just do the normal calculation
+                  vcly(clID)=distyo*diflat/tstep
+                end if
+              else
+                vclx(clID)=(wclcmass(clID,1)-wclcmass(selCL,1))/tstep
+                vcly(clID)=(wclcmass(clID,2)-wclcmass(selCL,2))/tstep
+              end if
             end if
           end if
         end do
@@ -198,6 +252,11 @@ module advectioncorrection
           do clID=1,globnIDs
             if(tsclID(clID)>tsID+1)exit
             if(tsclID(clID)==tsID+1 .AND. vclx(clID).ne.outmissval .AND. vcly(clID).ne.outmissval)then
+              if(sqrt(vclx(clID)**2 + vcly(clID)**2)>maxvel)then
+                if(verbose)write(*,*)"Skipping cell ",clID," because it has a really high velocity: ", &
+                 & sqrt(vclx(clID)**2 + vcly(clID)**2)
+                cycle ! cycle if this cell has a unrealistically high velocity
+              end if
               uvfield2d(vclxindex(clID),vclyindex(clID)) = uvfield2d(vclxindex(clID),vclyindex(clID)) + vclx(clID)
               vvfield2d(vclxindex(clID),vclyindex(clID)) = vvfield2d(vclxindex(clID),vclyindex(clID)) + vcly(clID)
               smpsize2d(vclxindex(clID),vclyindex(clID)) = smpsize2d(vclxindex(clID),vclyindex(clID)) + 1
@@ -228,7 +287,7 @@ module advectioncorrection
         end do
 
         ! deallocate some arrays to rerun the linking part
-        deallocate(links,minclIDloc,iclIDloc,nbw,nfw)
+        deallocate(links,nlinks,clink,ltype,nbw,nfw)
 
         ! close input and output
         CALL gridDestroy(gridID2)

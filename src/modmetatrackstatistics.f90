@@ -25,7 +25,7 @@ module metatrackstatistics
 
       implicit none
 
-      character(len=800) :: ttrack
+      character(len=stdclen) :: ttrack
       integer :: mints,maxts
 
       write(*,*)"======================================="
@@ -176,16 +176,13 @@ module metatrackstatistics
       include 'cdi.inc'
 
       ! data arrays
-      real(kind=8), allocatable :: dat(:),pdat(:)          ! array for reading float from nc
+      real(kind=stdfloattype), allocatable :: dat(:),pdat(:)          ! array for reading float from nc
 
       write(*,*)"======================================="
       write(*,*)"====== WRITE META TRACKS TO FILE ======"
       write(*,*)"======================================="
       write(*,*)"=== ... to meta.nc ..."
       write(*,*)"---------"
-
-      ! Get initial Information about grid and timesteps
-      CALL datainfo(outfile)
 
       ! Open the cells file
       streamID2=streamOpenRead(outfile)
@@ -200,17 +197,10 @@ module metatrackstatistics
       gridID2=vlistInqVarGrid(vlistID2,varID2)
       taxisID2=vlistInqTaxis(vlistID2)
       zaxisID2=vlistInqVarZaxis(vlistID2,varID2)
-      outmissval=vlistInqVarMissval(vlistID2,varID2)
 
       !! open new nc file for results
       ! define grid
-      gridID1=gridCreate(GRID_GENERIC, nx*ny)
-      CALL gridDefXsize(gridID1,nx)
-      CALL gridDefYsize(gridID1,ny)
-      CALL gridDefXvals(gridID1,xvals)
-      CALL gridDefYvals(gridID1,yvals)
-      CALL gridDefXunits(gridID1,TRIM(xunit))
-      CALL gridDefYunits(gridID1,TRIM(yunit))
+      gridID1=gridDuplicate(gridID2)
       zaxisID1=zaxisCreate(ZAXIS_GENERIC, 1)
       CALL zaxisDefLevels(zaxisID1, level)
       ! define variables
@@ -220,16 +210,19 @@ module metatrackstatistics
       CALL vlistDefVarLongname(vlistID1,varID1,"unique ID of each meta track")
       CALL vlistDefVarUnits(vlistID1,varID1,"-")
       CALL vlistDefVarMissval(vlistID1,varID1,outmissval)
-      CALL vlistDefVarDatatype(vlistID1,varID1,DATATYPE_INT32)
+      CALL vlistDefVarDatatype(vlistID1,varID1,CDI_DATATYPE_INT32)
       ! copy time axis from input
       taxisID1=vlistInqTaxis(vlistID2)
       call vlistDefTaxis(vlistID1,taxisID1)
       ! Open the dataset for writing
-      streamID1=streamOpenWrite("meta.nc",FILETYPE_NC)
+      streamID1=streamOpenWrite("meta.nc",CDI_FILETYPE_NC4)
       if(streamID1<0)then
          write(*,*)cdiStringError(streamID1)
          stop
       end if
+      ! set netCDF4 compression
+      CALL streamDefCompType(streamID1,CDI_COMPRESS_ZIP)
+      CALL streamDefCompLevel(streamID1, 6)
       ! Assign variables to dataset
       call streamDefVList(streamID1,vlistID1)
 
@@ -295,16 +288,13 @@ module metatrackstatistics
       include 'cdi.inc'
 
       ! data arrays
-      real(kind=8), allocatable :: dat(:),pdat(:)          ! array for reading float from nc
+      real(kind=stdfloattype), allocatable :: dat(:),pdat(:)          ! array for reading float from nc
 
       write(*,*)"======================================="
       write(*,*)"====== WRITE MAINSTREAMS TO FILE ======"
       write(*,*)"======================================="
       write(*,*)"=== ... to meta_mainstream.nc ..."
       write(*,*)"---------"
-
-      ! Get initial Information about grid and timesteps of both files
-      CALL datainfo(outfile)
 
       ! Open the cells file
       streamID2=streamOpenRead(outfile)
@@ -319,18 +309,10 @@ module metatrackstatistics
       gridID2=vlistInqVarGrid(vlistID2,varID2)
       taxisID2=vlistInqTaxis(vlistID2)
       zaxisID2=vlistInqVarZaxis(vlistID2,varID2)
-      outmissval=vlistInqVarMissval(vlistID2,varID2)
-
 
       !! open new nc file for results
       ! define grid
-      gridID1=gridCreate(GRID_GENERIC, nx*ny)
-      CALL gridDefXsize(gridID1,nx)
-      CALL gridDefYsize(gridID1,ny)
-      CALL gridDefXvals(gridID1,xvals)
-      CALL gridDefYvals(gridID1,yvals)
-      CALL gridDefXunits(gridID1,"m")
-      CALL gridDefYunits(gridID1,"m")
+      gridID1=gridDuplicate(gridID2)
       zaxisID1=zaxisCreate(ZAXIS_GENERIC, 1)
       CALL zaxisDefLevels(zaxisID1, level)
       ! define variables
@@ -340,16 +322,19 @@ module metatrackstatistics
       CALL vlistDefVarLongname(vlistID1,varID1,"unique ID of each meta track")
       CALL vlistDefVarUnits(vlistID1,varID1,"-")
       CALL vlistDefVarMissval(vlistID1,varID1,outmissval)
-      CALL vlistDefVarDatatype(vlistID1,varID1,DATATYPE_INT32)
+      CALL vlistDefVarDatatype(vlistID1,varID1,CDI_DATATYPE_INT32)
       ! copy time axis from input
       taxisID1=vlistInqTaxis(vlistID2)
       call vlistDefTaxis(vlistID1,taxisID1)
       ! Open the dataset for writing
-      streamID1=streamOpenWrite("meta_mainstream.nc",FILETYPE_NC)
+      streamID1=streamOpenWrite("meta_mainstream.nc",CDI_FILETYPE_NC4)
       if(streamID1<0)then
          write(*,*)cdiStringError(streamID1)
          stop
       end if
+      ! set netCDF4 compression
+      CALL streamDefCompType(streamID1,CDI_COMPRESS_ZIP)
+      CALL streamDefCompLevel(streamID1, 6)
       ! Assign variables to dataset
       call streamDefVList(streamID1,vlistID1)
 
