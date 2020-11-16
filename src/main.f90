@@ -87,7 +87,7 @@ program celltrack
   !=======================================
 
   CALL docelldetection()
-  CALL dosubcelldetection()
+  if(subc)CALL dosubcelldetection()
 
   !=======================================
   !======= FINISHED CELL DETECTION =======
@@ -98,7 +98,7 @@ program celltrack
   !=======================================
 
   CALL calccellstatistics()
-  CALL calcsubcellstatistics()
+  if(subc)CALL calcsubcellstatistics()
   
   CALL calccellshape()
 
@@ -131,7 +131,7 @@ program celltrack
   !=======================================
 
   CALL linking()
-  CALL dosubcelllinking()
+  if(subc)CALL dosubcelllinking()
 
   !=======================================
   !========== FINISHED LINKING ===========
@@ -142,7 +142,7 @@ program celltrack
   !=======================================
 
   CALL calclinkstatistics()
-  CALL calcsublinkstatistics()
+  if(subc)CALL calcsublinkstatistics()
 
   !=======================================
   !====== FINISHED LINK STATISTICS =======

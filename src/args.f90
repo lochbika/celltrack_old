@@ -54,6 +54,8 @@ subroutine cliarguments
   minarea=0
   sigma=2
   truncate=4
+  subc=.false.
+  thresdir=1
 
   do while (arg < narg)
     arg=arg+1
@@ -72,6 +74,20 @@ subroutine cliarguments
     case ("-thres")
       arg=arg+1
       call getarg(arg,argc)
+      do i=1,stdclen
+        if(argc(i:i)=="+")then
+          thresdir=1
+          k=i
+          exit
+        else if(argc(i:i)=="-")then
+          thresdir=0
+          k=i
+          exit
+        else
+          thresdir=1
+        endif  
+      end do
+      argc(k:k)=" "
       read(argc,*)thres
     case ("-var")
       arg=arg+1
@@ -127,6 +143,8 @@ subroutine cliarguments
       read(argc,*)tstep
     case ("-advcor")
       advcor=.true.
+    case ("-subc")
+      subc=.true.
     case ("-tracknc")
       tracknc=.true.
     case ("-metanc")

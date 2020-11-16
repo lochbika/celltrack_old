@@ -38,11 +38,13 @@ module globvar
   logical :: nometa                          ! completely switch off meta track routines
   logical :: nometamstr                      ! completely switch off meta track mainstream routines
   logical :: periodic                        ! switch for periodic boundaries in input fields
+  logical :: subc                            ! switch to activate subcell routines
   integer :: coarsex,coarsey                 ! factor for coarse graining of the grid for advection correction
   integer :: tstep                           ! timestep of input data in seconds
   integer :: minarea                         ! minimum area for clusters in grid points
   real(kind=stdfloattype) :: sigma                      ! the std dev for the gaussian blur before subcelldetection
   integer :: truncate                        ! truncation(span) for the gaussian blur before subcelldetection
+  integer :: thresdir                        ! is the given threshold a minimum or maximum
   
   ! basic information about variable in input file
   character(len=stdclen) :: vunit,vname
